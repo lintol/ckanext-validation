@@ -15,6 +15,8 @@ import ckantoolkit as t
 
 from ckanext.validation.model import Validation
 
+from .lintol import launch_wamp
+
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +90,9 @@ def run_validation_job(resource):
 
 def _validate_table(source, _format=u'csv', schema=None, **options):
 
-    report = validate(source, format=_format, schema=schema, **options)
+    report = launch_wamp(source) # POC hook
+
+    # report = validate(source, format=_format, schema=schema, **options)
 
     log.debug(u'Validating source: {}'.format(source))
 
