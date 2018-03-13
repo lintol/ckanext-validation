@@ -1,5 +1,6 @@
 {% extends "package/base.html" %}
 
+<script src="https://cdn.jsdelivr.net/npm/vue"></script>
 
 {%- block subtitle %}{{ _('Validation Report') }}{% endblock -%}
 
@@ -32,6 +33,7 @@
 
         {% if validation.report %}
             <div id="report" data-module="validation-report" data-module-report="{{ h.dump_json_value(validation.report) }}"></div>
+            <div id="reportTarget"></div>
         {% endif %}
 
         </div>

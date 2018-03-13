@@ -4,8 +4,8 @@ this.ckan.module('validation-report', function (jQuery) {
       report: null
     },
     initialize: function() {
-      goodtablesUI.render(
-        goodtablesUI.Report,
+      lintolReportingUI.render(
+        lintolReportingUI.ReportView,
         {report: this.options.report},
         this.el[0]
       )

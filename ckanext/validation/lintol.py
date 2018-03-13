@@ -4,6 +4,7 @@ import logging
 from autobahn.asyncio.wamp import ApplicationRunner, ApplicationSession
 import trollius as asyncio
 from trollius import From
+from ckantoolkit import config
 
 log = logging.getLogger(__name__)
 
@@ -12,12 +13,15 @@ class WampClientComponent(ApplicationSession):
 
     _data_uri = ''
     _results = None
-    _timeout = 20.
+    _timeout = 120.
 
-    def __init__(self, results, data_uri, *args, **kwargs):
+    def __init__(self, results, data_uri, settings, *args, **kwargs):
         super(WampClientComponent, self).__init__(*args, **kwargs)
+        self._token = config.get('ckanext.validation.lintol_token', None)
+
         self._data_uri = data_uri
         self._results = results
+        self._settings = settings
         log.debug(u'Creating Lintol WAMP client')
 
     @asyncio.coroutine
@@ -29,45 +33,51 @@ class WampClientComponent(ApplicationSession):
         try:
             fut = self.call(
                 u'com.ltlcapstone.validation',
-                self._data_uri
+                self._token,
+                self._data_uri,
+                self._settings
             )
 
             try:
-                validation_id = yield From(asyncio.wait_for(fut, self._timeout))
+                validation_ids = yield From(asyncio.wait_for(fut, self._timeout))
             except asyncio.TimeoutError as e:
                 fut.cancel()
                 log.debug(u'Timed out waiting for Capstone')
                 raise e
 
-            log.debug(u'Got Lintol validation id: {}'.format(validation_id))
+            if validation_ids:
+                validation_id = validation_ids[0]
+                log.debug(u'Got Lintol validation id: {}'.format(validation_id))
 
-            # Replace with loop.create_future() when available
-            fut = asyncio.Future()
+                # Replace with loop.create_future() when available
+                fut = asyncio.Future()
 
-            @asyncio.coroutine
-            def receive_response_event(result):
-                log.debug('Received response')
-                fut.set_result(result)
+                @asyncio.coroutine
+                def receive_response_event(result):
+                    log.debug('Received response')
+                    fut.set_result(result)
 
-            yield From(self.subscribe(
-                receive_response_event,
-                u'com.ltlcapstone.validation.{validation_id}.event_complete'.format(
-                    validation_id=validation_id
-                )
-            ))
-
-            try:
-                log.debug('Waiting for com.ltlcapstone.validation.{validation_id}.event_complete'.format(
-                    validation_id=validation_id
+                yield From(self.subscribe(
+                    receive_response_event,
+                    u'com.ltlcapstone.validation.{validation_id}.event_complete'.format(
+                        validation_id=validation_id
+                    )
                 ))
-                result = yield From(asyncio.wait_for(fut, self._timeout))
-            except asyncio.TimeoutError as e:
-                fut.cancel()
-                log.debug(u'Timed out waiting for validation result')
-                raise e
+
+                try:
+                    log.debug('Waiting for com.ltlcapstone.validation.{validation_id}.event_complete'.format(
+                        validation_id=validation_id
+                    ))
+                    result = yield From(asyncio.wait_for(fut, self._timeout))
+                except asyncio.TimeoutError as e:
+                    fut.cancel()
+                    log.debug(u'Timed out waiting for validation result')
+                    raise e
+                else:
+                    self._results.append(result)
+                    log.debug(u'Got validation result: ' + str(result))
             else:
-                self._results.append(result)
-                log.debug(u'Got validation result: ' + str(result))
+                log.debug(u'No validation was run')
         except Exception as e:
             log.exception(u'Exception in the WAMP procedure')
             raise e
@@ -76,7 +86,7 @@ class WampClientComponent(ApplicationSession):
             loop.stop()
 
 
-def launch_wamp(data_uri):
+def launch_wamp(data_uri, format, schema, options):
     """Run the workflow against a WAMP server."""
 
     log.debug(u'Executing Lintol for URI: {}'.format(data_uri))
@@ -88,10 +98,13 @@ def launch_wamp(data_uri):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    settings = {'fileType': format, 'schema': schema, 'options': options}
+
     loop.run_until_complete(
         runner.run(lambda *args, **kwargs: WampClientComponent(
             results,
             data_uri,
+            settings,
             *args,
             **kwargs
         ), start_loop=False)
@@ -104,10 +117,9 @@ def launch_wamp(data_uri):
     loop.close()
 
     if results:
-        output = json.loads(results[0][0])
+        output = json.loads(results[0])
         log.debug(output)
-        goodtables_all = output[0]['goodtables:all'][2]
 
-        return goodtables_all
+        return output
 
     return False

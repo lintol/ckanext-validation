@@ -61,19 +61,25 @@ def run_validation_job(resource):
     report = _validate_table(source, _format=_format, schema=schema, **options)
 
     # Hide uploaded files
-    for table in report.get('tables', []):
-        if table['source'].startswith('/'):
-            table['source'] = resource['url']
-    for index, warning in enumerate(report.get('warnings', [])):
-        report['warnings'][index] = re.sub(r'Table ".*"', 'Table', warning)
+    if report:
+        for table in report.get('tables', []):
+            if table['source'].startswith('/'):
+                table['source'] = resource['url']
+        for index, warning in enumerate(report.get('warnings', [])):
+            report['warnings'][index] = re.sub(r'Table ".*"', 'Table', warning)
 
-    if report['table-count'] > 0:
-        validation.status = u'success' if report[u'valid'] else u'failure'
-        validation.report = report
+        if report['table-count'] > 0:
+            validation.status = u'success' if report[u'valid'] else u'failure'
+            validation.report = report
+        else:
+            validation.status = u'error'
+            validation.error = {
+                'message': '\n'.join(report['warnings']) or u'No tables found'}
     else:
         validation.status = u'error'
         validation.error = {
-            'message': '\n'.join(report['warnings']) or u'No tables found'}
+            'message': u'No report retrieved'
+        }
     validation.finished = datetime.datetime.utcnow()
 
     Session.add(validation)
@@ -90,7 +96,7 @@ def run_validation_job(resource):
 
 def _validate_table(source, _format=u'csv', schema=None, **options):
 
-    report = launch_wamp(source) # POC hook
+    report = launch_wamp(source, format=_format, schema=schema, options=options) # POC hook
 
     # report = validate(source, format=_format, schema=schema, **options)
 
